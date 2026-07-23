@@ -1,0 +1,623 @@
+<title>Shift Report Agent</title>
+<style>
+  :root {
+    --bg: #EEF1F3;
+    --surface: #FFFFFF;
+    --surface-2: #F6F8F9;
+    --border: #D5DBE0;
+    --border-strong: #BCC5CC;
+    --ink: #171B1F;
+    --muted: #5B6670;
+    --faint: #8B96A0;
+    --accent: #1F6FB2;
+    --accent-ink: #ffffff;
+    --good: #2E7D46;
+    --good-bg: #E6F1E9;
+    --warn: #B7791F;
+    --warn-bg: #F7EEDA;
+    --crit: #C0392B;
+    --crit-bg: #F7E4E1;
+    --shadow: 0 1px 2px rgba(20,30,40,.06), 0 4px 16px rgba(20,30,40,.05);
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #13161A; --surface: #1B2126; --surface-2: #222A31;
+      --border: #2D373E; --border-strong: #3A454D;
+      --ink: #E8EDF0; --muted: #93A0A9; --faint: #6C7982;
+      --accent: #4DA3E0; --accent-ink: #0C1418;
+      --good: #4FB06E; --good-bg: #17281D;
+      --warn: #E0A93B; --warn-bg: #2C2415;
+      --crit: #E5675A; --crit-bg: #2E1A18;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #EEF1F3; --surface: #FFFFFF; --surface-2: #F6F8F9;
+    --border: #D5DBE0; --border-strong: #BCC5CC;
+    --ink: #171B1F; --muted: #5B6670; --faint: #8B96A0;
+    --accent: #1F6FB2; --accent-ink: #ffffff;
+    --good: #2E7D46; --good-bg: #E6F1E9;
+    --warn: #B7791F; --warn-bg: #F7EEDA;
+    --crit: #C0392B; --crit-bg: #F7E4E1;
+    --shadow: 0 1px 2px rgba(20,30,40,.06), 0 4px 16px rgba(20,30,40,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #13161A; --surface: #1B2126; --surface-2: #222A31;
+    --border: #2D373E; --border-strong: #3A454D;
+    --ink: #E8EDF0; --muted: #93A0A9; --faint: #6C7982;
+    --accent: #4DA3E0; --accent-ink: #0C1418;
+    --good: #4FB06E; --good-bg: #17281D;
+    --warn: #E0A93B; --warn-bg: #2C2415;
+    --crit: #E5675A; --crit-bg: #2E1A18;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 72px; }
+
+  /* Masthead */
+  .mast { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+  .mast h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; font-weight: 650; }
+  .mast .tag { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+  .mast .sub { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; max-width: 60ch; }
+
+  /* Intake card */
+  .intake { margin-top: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .drop {
+    padding: 30px 24px; text-align: center; cursor: pointer;
+    border: 2px dashed var(--border-strong); border-radius: 10px; margin: 16px;
+    transition: border-color .15s, background .15s;
+    background: var(--surface-2);
+  }
+  .drop:hover, .drop.hot { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); }
+  .drop .icon { width: 34px; height: 34px; margin: 0 auto 10px; color: var(--accent); }
+  .drop .big { font-size: 14.5px; font-weight: 600; }
+  .drop .small { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .drop .fname { font-family: var(--mono); font-size: 12.5px; color: var(--accent); margin-top: 10px; word-break: break-all; }
+
+  .bar { display: flex; gap: 10px; align-items: center; padding: 0 16px 16px; flex-wrap: wrap; }
+  button { font-family: var(--sans); font-size: 13.5px; font-weight: 600; border-radius: 8px; cursor: pointer; border: 1px solid transparent; padding: 9px 16px; transition: filter .15s, background .15s; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.07); }
+  .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--accent); border-color: var(--border-strong); }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .err { color: var(--crit); font-size: 12.5px; font-family: var(--mono); }
+
+  /* Report */
+  .report { margin-top: 28px; display: none; }
+  .report.show { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
+
+  .rhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 4px; }
+  .rhead .shift { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+  .rhead h2 { margin: 4px 0 0; font-size: 22px; letter-spacing: -0.015em; }
+  .rhead .meta { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .rhead .prior { text-align: right; font-size: 12px; color: var(--faint); font-family: var(--mono); }
+
+  .eyebrow { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); margin: 0 0 14px; }
+
+  /* KPI grid */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { background: var(--surface); padding: 16px 16px 14px; }
+  .kpi .label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+  .kpi .val { font-family: var(--mono); font-size: 27px; font-weight: 600; margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .kpi .delta { font-family: var(--mono); font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 5px; }
+  .delta.up-good, .delta.down-good { color: var(--good); }
+  .delta.up-bad, .delta.down-bad { color: var(--crit); }
+  .delta.flat { color: var(--faint); }
+  .delta .arrow { font-size: 11px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tscroll { overflow-x: auto; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  tr:last-child td { border-bottom: none; }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--border-strong); }
+  .barcell { position: relative; }
+  .barcell .fill { position: absolute; left: 10px; bottom: 5px; height: 3px; background: var(--accent); border-radius: 2px; opacity: .5; }
+
+  /* Exceptions */
+  .exc { display: flex; flex-direction: column; gap: 10px; }
+  .exc-item { display: flex; gap: 12px; padding: 13px 15px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); }
+  .exc-item.critical { background: var(--crit-bg); border-color: color-mix(in srgb, var(--crit) 35%, var(--border)); }
+  .exc-item.warning { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+  .exc-item .stripe { width: 4px; border-radius: 3px; flex: none; }
+  .exc-item.critical .stripe { background: var(--crit); }
+  .exc-item.warning .stripe { background: var(--warn); }
+  .exc-body { flex: 1; }
+  .exc-body .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip { font-family: var(--mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; padding: 2px 7px; border-radius: 5px; }
+  .chip.critical { background: var(--crit); color: #fff; }
+  .chip.warning { background: var(--warn); color: #fff; }
+  .exc-body .who { font-weight: 650; font-size: 14px; }
+  .exc-body .msg { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .exc-body .msg b { color: var(--ink); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .clear { display: flex; align-items: center; gap: 10px; color: var(--good); font-weight: 600; font-size: 14px; }
+
+  .bottom { margin-top: 2px; font-size: 15px; line-height: 1.5; }
+  .bottom b { font-weight: 700; }
+
+  .footer-bar { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+  .export { margin-top: 16px; }
+  .export textarea { width: 100%; height: 300px; font-family: var(--mono); font-size: 12px; line-height: 1.55; padding: 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); resize: vertical; white-space: pre; overflow: auto; }
+  .export textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .export .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <div class="tag">Fabrication · End of Shift</div>
+      <h1>Production Shift Report Agent</h1>
+      <p class="sub">Drop a machine-output log and get a one-page shift report — units, downtime, and defects by line, measured against the prior shift, with anything abnormal flagged.</p>
+    </div>
+  </header>
+
+  <section class="intake" aria-label="Log intake">
+    <div id="drop" class="drop" role="button" tabindex="0" aria-label="Drop a CSV shift log or browse">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>
+      </svg>
+      <div class="big">Drop shift log CSV here</div>
+      <div class="small">or click to browse · one row per machine per shift</div>
+      <div id="fname" class="fname" hidden></div>
+    </div>
+    <div class="bar">
+      <button id="gen" class="btn-primary" disabled>Generate report</button>
+      <button id="sample" class="btn-ghost">Load sample data</button>
+      <span id="err" class="err"></span>
+    </div>
+    <input id="file" type="file" accept=".csv,text/csv" hidden>
+  </section>
+
+  <section id="report" class="report" aria-live="polite"></section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Sample data (mirrors data/shift_log.csv) ----
+  const SAMPLE =
+`shift_id,shift_start,line,machine_id,units_produced,defect_count,downtime_minutes
+S-2026-0720-DAY,2026-07-20T06:00,Line A,M-01,420,4,12
+S-2026-0720-DAY,2026-07-20T06:00,Line A,M-02,405,3,10
+S-2026-0720-DAY,2026-07-20T06:00,Line B,M-03,380,5,18
+S-2026-0720-DAY,2026-07-20T06:00,Line B,M-04,395,2,8
+S-2026-0720-DAY,2026-07-20T06:00,Line C,M-05,350,6,20
+S-2026-0720-DAY,2026-07-20T06:00,Line C,M-06,360,4,15
+S-2026-0720-DAY,2026-07-20T06:00,Line C,M-07,340,5,22
+S-2026-0720-NIGHT,2026-07-20T18:00,Line A,M-01,410,5,14
+S-2026-0720-NIGHT,2026-07-20T18:00,Line A,M-02,400,4,11
+S-2026-0720-NIGHT,2026-07-20T18:00,Line B,M-03,375,6,20
+S-2026-0720-NIGHT,2026-07-20T18:00,Line B,M-04,390,3,9
+S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-05,345,7,25
+S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-06,210,4,130
+S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
+
+  const REQUIRED = ["shift_id","shift_start","line","machine_id","units_produced","defect_count","downtime_minutes"];
+
+  const el = {
+    drop: document.getElementById("drop"),
+    file: document.getElementById("file"),
+    fname: document.getElementById("fname"),
+    gen: document.getElementById("gen"),
+    sample: document.getElementById("sample"),
+    err: document.getElementById("err"),
+    report: document.getElementById("report"),
+  };
+
+  let csvText = null;
+
+  // ---- CSV parsing (handles quoted fields) ----
+  function parseCSV(text) {
+    const rows = [];
+    let field = "", row = [], q = false;
+    text = text.replace(/\r\n?/g, "\n");
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; }
+        else field += c;
+      } else {
+        if (c === '"') q = true;
+        else if (c === ",") { row.push(field); field = ""; }
+        else if (c === "\n") { row.push(field); rows.push(row); field = ""; row = []; }
+        else field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(r => r.some(c => c.trim() !== ""));
+  }
+
+  function toRecords(text) {
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error("Log has no data rows.");
+    const header = rows[0].map(h => h.trim());
+    const missing = REQUIRED.filter(c => !header.includes(c));
+    if (missing.length) throw new Error("Missing column(s): " + missing.join(", "));
+    const idx = {}; header.forEach((h, i) => idx[h] = i);
+    return rows.slice(1).map((r, n) => {
+      const num = (k) => {
+        const v = Number((r[idx[k]] || "").trim());
+        if (!Number.isFinite(v)) throw new Error(`Row ${n+2}: "${k}" is not a number.`);
+        return v;
+      };
+      return {
+        shift_id: (r[idx.shift_id] || "").trim(),
+        shift_start: (r[idx.shift_start] || "").trim(),
+        line: (r[idx.line] || "").trim(),
+        machine_id: (r[idx.machine_id] || "").trim(),
+        units: num("units_produced"),
+        defects: num("defect_count"),
+        downtime: num("downtime_minutes"),
+      };
+    });
+  }
+
+  // ---- Aggregation ----
+  function summarize(recs) {
+    const t = { units: 0, defects: 0, downtime: 0, machines: recs.length, lines: {}, byMachine: {} };
+    const lineSet = new Set();
+    recs.forEach(r => {
+      t.units += r.units; t.defects += r.defects; t.downtime += r.downtime;
+      lineSet.add(r.line);
+      t.lines[r.line] = (t.lines[r.line] || 0) + r.defects;
+      t.byMachine[r.machine_id] = r;
+    });
+    t.lineCount = lineSet.size;
+    t.defectRate = t.units + t.defects > 0 ? t.defects / (t.units + t.defects) : 0;
+    return t;
+  }
+
+  function median(nums) {
+    if (!nums.length) return 0;
+    const s = [...nums].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
+  }
+
+  // ---- Exception rules (see AGENT.md) ----
+  function findExceptions(recs, cur, prior) {
+    const out = [];
+    const medDef = median(recs.map(r => r.defects));
+    recs.forEach(r => {
+      const p = prior ? prior.byMachine[r.machine_id] : null;
+      // Downtime spike
+      if (r.downtime > 60 || (p && p.downtime > 0 && r.downtime > 3 * p.downtime)) {
+        const crit = r.downtime > 90;
+        out.push({
+          sev: crit ? "critical" : "warning", who: `${r.machine_id} · ${r.line}`, kind: "Downtime",
+          msg: `Stopped <b>${r.downtime} min</b>${p ? ` vs ${p.downtime} last shift` : ""}. Check the machine before the next run.`,
+          sort: crit ? 0 : 2, num: r.downtime,
+        });
+      }
+      // Defect spike
+      const share = cur.defects > 0 ? r.defects / cur.defects : 0;
+      if ((medDef > 0 && r.defects > 3 * medDef) || (p && p.defects > 0 && r.defects > 3 * p.defects)) {
+        const crit = share > 0.40;
+        out.push({
+          sev: crit ? "critical" : "warning", who: `${r.machine_id} · ${r.line}`, kind: "Defects",
+          msg: `Produced <b>${r.defects} defects</b>${p ? ` vs ${p.defects} last shift` : ""} — <b>${Math.round(share*100)}%</b> of the shift's total. Inspect tooling/material.`,
+          sort: crit ? 0 : 1, num: r.defects,
+        });
+      }
+      // Output drop
+      if (p && p.units > 0) {
+        const drop = (p.units - r.units) / p.units;
+        if (drop > 0.30) {
+          out.push({
+            sev: "warning", who: `${r.machine_id} · ${r.line}`, kind: "Output",
+            msg: `Output fell <b>${Math.round(drop*100)}%</b> — <b>${r.units}</b> units vs ${p.units} last shift.`,
+            sort: 3, num: -r.units,
+          });
+        }
+      }
+    });
+    // Shift-wide defect rate
+    if (cur.defectRate > 0.03) {
+      out.push({
+        sev: "warning", who: "Whole shift", kind: "Defect rate",
+        msg: `Shift defect rate <b>${(cur.defectRate*100).toFixed(1)}%</b> is above the 3% line${prior ? ` (was ${(prior.defectRate*100).toFixed(1)}% last shift)` : ""}.`,
+        sort: 2.5, num: cur.defectRate,
+      });
+    }
+    return out.sort((a, b) => a.sort - b.sort);
+  }
+
+  // ---- Formatting helpers ----
+  const nf = new Intl.NumberFormat("en-US");
+  const fmt = (n) => nf.format(Math.round(n));
+  function deltaObj(cur, prev, higherIsGood) {
+    if (prev == null) return null;
+    const d = cur - prev;
+    const pct = prev !== 0 ? (d / prev) * 100 : (cur !== 0 ? Infinity : 0);
+    let cls = "flat", arrow = "→";
+    if (d > 0) { arrow = "▲"; cls = higherIsGood ? "up-good" : "up-bad"; }
+    else if (d < 0) { arrow = "▼"; cls = higherIsGood ? "down-bad" : "down-good"; }
+    return { d, pct, cls, arrow };
+  }
+  function deltaText(delta, unit) {
+    if (!delta) return "no prior shift";
+    if (delta.d === 0) return "unchanged";
+    const pctStr = Number.isFinite(delta.pct) ? `${delta.d > 0 ? "+" : ""}${delta.pct.toFixed(1)}%` : "new";
+    return `${delta.arrow} ${delta.d > 0 ? "+" : "−"}${fmt(Math.abs(delta.d))}${unit} · ${pctStr}`;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
+
+  // ---- Render ----
+  function render(recs) {
+    const byShift = new Map();
+    recs.forEach(r => {
+      if (!byShift.has(r.shift_id)) byShift.set(r.shift_id, { id: r.shift_id, start: r.shift_start, recs: [] });
+      byShift.get(r.shift_id).recs.push(r);
+    });
+    const shifts = [...byShift.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const curShift = shifts[shifts.length - 1];
+    const priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
+
+    const cur = summarize(curShift.recs);
+    const prior = priorShift ? summarize(priorShift.recs) : null;
+    const exceptions = findExceptions(curShift.recs, cur, prior);
+
+    // Header meta
+    const d = new Date(curShift.start);
+    const dateStr = isNaN(d) ? curShift.start : d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const period = /night/i.test(curShift.id) ? "Night shift" : /day/i.test(curShift.id) ? "Day shift" : "Shift";
+
+    // KPIs
+    const dUnits = deltaObj(cur.units, prior && prior.units, true);
+    const dDown = deltaObj(cur.downtime, prior && prior.downtime, false);
+    const dDef = deltaObj(cur.defects, prior && prior.defects, false);
+    const dRate = deltaObj(cur.defectRate, prior && prior.defectRate, false);
+    const rateDeltaTxt = !dRate ? "no prior shift" : dRate.d === 0 ? "unchanged" :
+      `${dRate.arrow} ${dRate.d > 0 ? "+" : "−"}${Math.abs(dRate.d*100).toFixed(1)} pts`;
+
+    const kpi = (label, val, deltaHtml) =>
+      `<div class="kpi"><div class="label">${label}</div><div class="val">${val}</div><div class="delta ${deltaHtml.cls}">${deltaHtml.text}</div></div>`;
+
+    const kpisHtml = `
+      <div class="kpis">
+        ${kpi("Units produced", fmt(cur.units), { cls: dUnits ? dUnits.cls : "flat", text: deltaText(dUnits, "") })}
+        ${kpi("Downtime", fmt(cur.downtime) + " min", { cls: dDown ? dDown.cls : "flat", text: deltaText(dDown, " min") })}
+        ${kpi("Defects", fmt(cur.defects), { cls: dDef ? dDef.cls : "flat", text: deltaText(dDef, "") })}
+        ${kpi("Defect rate", (cur.defectRate*100).toFixed(1) + "%", { cls: dRate ? dRate.cls : "flat", text: rateDeltaTxt })}
+      </div>`;
+
+    // Defects by line
+    const lineNames = Object.keys(cur.lines).sort();
+    const maxLineDef = Math.max(1, ...lineNames.map(l => cur.lines[l]));
+    const lineRows = lineNames.map(l => {
+      const v = cur.lines[l];
+      const pv = prior && prior.lines[l] != null ? prior.lines[l] : null;
+      const w = Math.round((v / maxLineDef) * 100);
+      return `<tr>
+        <td>${esc(l)}</td>
+        <td class="num barcell">${fmt(v)}<span class="fill" style="width:calc(${w}% - 20px)"></span></td>
+        <td class="num">${pv == null ? "—" : fmt(pv)}</td>
+        <td class="num">${pv == null ? "—" : (v - pv > 0 ? "+" : v - pv < 0 ? "−" : "") + fmt(Math.abs(v - pv))}</td>
+      </tr>`;
+    }).join("");
+    const lineTable = `
+      <div class="tscroll"><table>
+        <thead><tr><th>Line</th><th class="num">Defects</th><th class="num">Prior</th><th class="num">Δ</th></tr></thead>
+        <tbody>
+          ${lineRows}
+          <tr class="total"><td>All lines</td><td class="num">${fmt(cur.defects)}</td><td class="num">${prior ? fmt(prior.defects) : "—"}</td><td class="num">${dDef ? (dDef.d>0?"+":dDef.d<0?"−":"")+fmt(Math.abs(dDef.d)) : "—"}</td></tr>
+        </tbody>
+      </table></div>`;
+
+    // Exceptions
+    let excHtml;
+    if (!exceptions.length) {
+      excHtml = `<div class="clear">✓ No exceptions — shift ran within normal range.</div>`;
+    } else {
+      excHtml = `<div class="exc">` + exceptions.map(e => `
+        <div class="exc-item ${e.sev}">
+          <div class="stripe"></div>
+          <div class="exc-body">
+            <div class="top"><span class="chip ${e.sev}">${e.sev}</span><span class="who">${esc(e.who)}</span></div>
+            <div class="msg">${e.msg}</div>
+          </div>
+        </div>`).join("") + `</div>`;
+    }
+
+    // Bottom line
+    const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
+
+    el.report.innerHTML = `
+      <div class="card">
+        <div class="rhead">
+          <div>
+            <div class="shift">${esc(curShift.id)}</div>
+            <h2>${period} report</h2>
+            <div class="meta">${dateStr} · ${cur.lineCount} lines · ${cur.machines} machines</div>
+          </div>
+          <div class="prior">${prior ? "vs prior shift<br>" + esc(priorShift.id) : "no prior shift<br>in this log"}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="eyebrow">At a glance</p>
+        ${kpisHtml}
+      </div>
+
+      <div class="card">
+        <p class="eyebrow">Defects by line</p>
+        ${lineTable}
+      </div>
+
+      <div class="card">
+        <p class="eyebrow">Exceptions${exceptions.length ? " · " + exceptions.length : ""}</p>
+        ${excHtml}
+      </div>
+
+      <div class="card">
+        <p class="eyebrow">Bottom line</p>
+        <p class="bottom">${bottom}</p>
+        <div class="footer-bar" style="margin-top:18px">
+          <button id="copy" class="btn-ghost">Copy report</button>
+          <button id="dl" class="btn-primary">Download report (.txt)</button>
+        </div>
+        <div id="export" class="export" hidden>
+          <textarea id="exporttext" readonly aria-label="Shift report text"></textarea>
+          <div class="note">Your report is ready above. If the file didn't download, select this text and copy it, or use <b>Copy report</b>.</div>
+        </div>
+      </div>`;
+
+    el.report.classList.add("show");
+    const reportText = buildTextReport(curShift, priorShift, cur, prior, exceptions, dateStr, period);
+    document.getElementById("dl").addEventListener("click", () => exportReport(reportText, curShift.id));
+    document.getElementById("copy").addEventListener("click", (e) => copyReport(reportText, e.currentTarget));
+    el.report.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function buildBottomLine(cur, prior, exceptions, dUnits) {
+    const crit = exceptions.filter(e => e.sev === "critical");
+    if (crit.length) {
+      return `<b>Attention needed.</b> ${crit.map(e => e.who.split(" · ")[0]).join(" and ")} drove ${crit.length > 1 ? "critical issues" : "a critical issue"} this shift — clear ${crit.length > 1 ? "them" : "it"} before the next run. ` +
+        (prior ? `Overall output ${dUnits.d < 0 ? "slipped" : "held"} at ${fmt(cur.units)} units.` : `Output was ${fmt(cur.units)} units.`);
+    }
+    if (exceptions.length) {
+      return `Shift produced <b>${fmt(cur.units)} units</b> with ${exceptions.length} item${exceptions.length>1?"s":""} to watch, but nothing critical. Review the exceptions above.`;
+    }
+    return `Clean shift — <b>${fmt(cur.units)} units</b> at a ${(cur.defectRate*100).toFixed(1)}% defect rate, no exceptions flagged.`;
+  }
+
+  // ---- Plain-text report for download ----
+  function buildTextReport(curShift, priorShift, cur, prior, exceptions, dateStr, period) {
+    const L = [];
+    const rule = "=".repeat(58);
+    L.push(rule);
+    L.push(`PRODUCTION SHIFT REPORT`);
+    L.push(`${period} · ${curShift.id}`);
+    L.push(`${dateStr} · ${cur.lineCount} lines · ${cur.machines} machines`);
+    L.push(rule, "");
+    const dl = (cur_, prev, unit) => {
+      if (prev == null) return "(no prior shift)";
+      const d = cur_ - prev;
+      const pct = prev !== 0 ? (d / prev) * 100 : 0;
+      return `${d >= 0 ? "up" : "down"} ${fmt(Math.abs(d))}${unit} (${d>=0?"+":""}${pct.toFixed(1)}%) vs prior`;
+    };
+    L.push("AT A GLANCE");
+    L.push(`  Units produced   ${fmt(cur.units).padStart(8)}   ${dl(cur.units, prior&&prior.units, "")}`);
+    L.push(`  Downtime         ${(fmt(cur.downtime)+" min").padStart(8)}   ${dl(cur.downtime, prior&&prior.downtime, " min")}`);
+    L.push(`  Defects          ${fmt(cur.defects).padStart(8)}   ${dl(cur.defects, prior&&prior.defects, "")}`);
+    L.push(`  Defect rate      ${((cur.defectRate*100).toFixed(1)+"%").padStart(8)}   ${prior ? "was "+(prior.defectRate*100).toFixed(1)+"%" : "(no prior shift)"}`);
+    L.push("");
+    L.push("DEFECTS BY LINE");
+    Object.keys(cur.lines).sort().forEach(l => {
+      const pv = prior && prior.lines[l] != null ? prior.lines[l] : null;
+      L.push(`  ${l.padEnd(12)} ${fmt(cur.lines[l]).padStart(4)}${pv != null ? `   (prior ${fmt(pv)})` : ""}`);
+    });
+    L.push("");
+    L.push("EXCEPTIONS");
+    if (!exceptions.length) {
+      L.push("  None — shift ran within normal range.");
+    } else {
+      exceptions.forEach(e => {
+        const plain = e.msg.replace(/<\/?b>/g, "");
+        L.push(`  [${e.sev.toUpperCase()}] ${e.who}`);
+        L.push(`      ${plain}`);
+      });
+    }
+    L.push("");
+    L.push("BOTTOM LINE");
+    L.push("  " + buildBottomLine(cur, prior, exceptions, deltaObj(cur.units, prior&&prior.units, true)).replace(/<\/?b>/g, ""));
+    L.push("");
+    L.push(rule);
+    L.push(`Generated ${new Date().toLocaleString("en-US")} · Shift Report Agent`);
+    return L.join("\n");
+  }
+
+  // Reveal the report text inline (always works) and attempt a real file download.
+  function exportReport(text, shiftId) {
+    const box = document.getElementById("export");
+    const ta = document.getElementById("exporttext");
+    ta.value = text;
+    box.hidden = false;
+    tryDownload(text, `shift-report-${shiftId}.txt`);
+  }
+
+  // Best-effort file download. Sandboxed iframes may block this silently,
+  // which is why the text is always shown inline as a fallback.
+  function tryDownload(text, filename) {
+    try {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) { /* fallback is the inline text box */ }
+  }
+
+  function copyReport(text, btn) {
+    const done = () => { const old = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(() => btn.textContent = old, 1600); };
+    // Reveal the text too, so a manual copy is always possible.
+    const box = document.getElementById("export");
+    const ta = document.getElementById("exporttext");
+    ta.value = text; box.hidden = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => selectFallback(ta, done));
+    } else {
+      selectFallback(ta, done);
+    }
+  }
+
+  function selectFallback(ta, done) {
+    ta.focus(); ta.select();
+    try { if (document.execCommand("copy")) done(); } catch (e) { /* user can copy manually */ }
+  }
+
+  // ---- Wiring ----
+  function setLoaded(name, text) {
+    csvText = text;
+    el.fname.hidden = false;
+    el.fname.textContent = name;
+    el.gen.disabled = false;
+    el.err.textContent = "";
+  }
+  function readFile(file) {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => setLoaded(file.name, rd.result);
+    rd.onerror = () => { el.err.textContent = "Could not read that file."; };
+    rd.readAsText(file);
+  }
+
+  el.drop.addEventListener("click", () => el.file.click());
+  el.drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.file.click(); } });
+  el.file.addEventListener("change", (e) => readFile(e.target.files[0]));
+  ["dragenter","dragover"].forEach(ev => el.drop.addEventListener(ev, (e) => { e.preventDefault(); el.drop.classList.add("hot"); }));
+  ["dragleave","drop"].forEach(ev => el.drop.addEventListener(ev, (e) => { e.preventDefault(); el.drop.classList.remove("hot"); }));
+  el.drop.addEventListener("drop", (e) => { if (e.dataTransfer.files.length) readFile(e.dataTransfer.files[0]); });
+
+  el.sample.addEventListener("click", () => setLoaded("shift_log.csv (sample)", SAMPLE));
+
+  el.gen.addEventListener("click", () => {
+    el.err.textContent = "";
+    try {
+      const recs = toRecords(csvText);
+      render(recs);
+    } catch (err) {
+      el.report.classList.remove("show");
+      el.err.textContent = err.message || "Could not read this log.";
+    }
+  });
+})();
+</script>
