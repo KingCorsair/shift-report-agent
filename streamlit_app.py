@@ -79,7 +79,7 @@ def find_exceptions(recs: pd.DataFrame, cur: dict, prior: dict | None) -> list[d
             p and p.downtime_minutes > 0 and r.downtime_minutes > 3 * p.downtime_minutes
         ):
             crit = r.downtime_minutes > 90
-            vs = f" vs {int(p.downtime_minutes)} in the compared shift" if p else ""
+            vs = f" vs {int(p.downtime_minutes)} last shift" if p else ""
             out.append({
                 "sev": "critical" if crit else "warning",
                 "who": f"{r.machine_id} · {r.line}",
@@ -95,7 +95,7 @@ def find_exceptions(recs: pd.DataFrame, cur: dict, prior: dict | None) -> list[d
             p and p.defect_count > 0 and r.defect_count > 3 * p.defect_count
         ):
             crit = share > 0.40
-            vs = f" vs {int(p.defect_count)} in the compared shift" if p else ""
+            vs = f" vs {int(p.defect_count)} last shift" if p else ""
             out.append({
                 "sev": "critical" if crit else "warning",
                 "who": f"{r.machine_id} · {r.line}",
@@ -116,13 +116,13 @@ def find_exceptions(recs: pd.DataFrame, cur: dict, prior: dict | None) -> list[d
                     "kind": "Output",
                     "msg": f"Output fell **{round(drop * 100)}%** — "
                            f"**{int(r.units_produced)}** units vs "
-                           f"{int(p.units_produced)} in the compared shift.",
+                           f"{int(p.units_produced)} last shift.",
                     "sort": 3,
                 })
 
     # Shift-wide defect rate
     if cur["defect_rate"] > 0.03:
-        was = f" (compared shift {prior['defect_rate'] * 100:.1f}%)" if prior else ""
+        was = f" (was {prior['defect_rate'] * 100:.1f}% last shift)" if prior else ""
         out.append({
             "sev": "warning",
             "who": "Whole shift",
@@ -170,30 +170,26 @@ def build_text_report(cur_shift, prior_shift, cur, prior, exceptions,
          f"{date_str} · {cur['line_count']} lines · {cur['machines']} machines",
          rule, ""]
 
-    # The compared shift is whatever the user selected — not necessarily an
-    # earlier one — so name it explicitly instead of calling it "prior".
-    cmp = prior_shift["id"] if prior_shift else None
-
     def dl(cur_v, prev_v, unit):
         if prev_v is None:
-            return "(no comparison)"
+            return "(no prior shift)"
         d = cur_v - prev_v
         pct = (d / prev_v * 100) if prev_v != 0 else 0
-        return f"{'up' if d >= 0 else 'down'} {fmt(abs(d))}{unit} ({pct:+.1f}%)"
+        return f"{'up' if d >= 0 else 'down'} {fmt(abs(d))}{unit} ({pct:+.1f}%) vs prior"
 
     p = prior or {}
-    L.append(f"AT A GLANCE   (vs {cmp})" if cmp else "AT A GLANCE")
+    L.append("AT A GLANCE")
     L.append(f"  Units produced   {fmt(cur['units']):>8}   {dl(cur['units'], p.get('units'), '')}")
     L.append(f"  Downtime         {fmt(cur['downtime']) + ' min':>8}   {dl(cur['downtime'], p.get('downtime'), ' min')}")
     L.append(f"  Defects          {fmt(cur['defects']):>8}   {dl(cur['defects'], p.get('defects'), '')}")
-    rate_note = f"compared {prior['defect_rate'] * 100:.1f}%" if prior else "(no comparison)"
+    rate_note = f"was {prior['defect_rate'] * 100:.1f}%" if prior else "(no prior shift)"
     rate_val = f"{cur['defect_rate'] * 100:.1f}%"
     L.append(f"  Defect rate      {rate_val:>8}   {rate_note}")
     L.append("")
-    L.append(f"DEFECTS BY LINE   (vs {cmp})" if cmp else "DEFECTS BY LINE")
+    L.append("DEFECTS BY LINE")
     for line in sorted(cur["lines"]):
         pv = prior["lines"].get(line) if prior else None
-        extra = f"   (compared {fmt(pv)})" if pv is not None else ""
+        extra = f"   (prior {fmt(pv)})" if pv is not None else ""
         L.append(f"  {line:<12} {fmt(cur['lines'][line]):>4}{extra}")
     L.append("")
     L.append("EXCEPTIONS")
@@ -220,8 +216,8 @@ st.caption("FABRICATION · END OF SHIFT")
 st.title("Production Shift Report Agent")
 st.write(
     "Upload a machine-output log and get a one-page shift report — units, "
-    "downtime, and defects by line, measured against another shift you pick, "
-    "with anything abnormal flagged."
+    "downtime, and defects by line, measured against the prior shift, with "
+    "anything abnormal flagged."
 )
 
 uploaded = st.file_uploader(
@@ -252,30 +248,12 @@ except ValueError as err:
     st.error(str(err))
     st.stop()
 
-# Shifts ordered by start time. By default the latest is current and the one
-# before it is prior — but with two or more shifts the user can compare any pair.
+# Latest shift (by shift_start) is current; the one before it is prior.
 shifts = (
     df.groupby("shift_id")["shift_start"].min().sort_values().index.tolist()
 )
-
-if len(shifts) > 1:
-    st.subheader("Compare shifts")
-    cc1, cc2 = st.columns(2)
-    cur_id = cc1.selectbox(
-        "Report on", shifts, index=len(shifts) - 1, key="cur_shift"
-    )
-    prior_choices = ["— no comparison —"] + [s for s in shifts if s != cur_id]
-    default_prior = shifts[-2] if cur_id == shifts[-1] else "— no comparison —"
-    prior_pick = cc2.selectbox(
-        "Compare against",
-        prior_choices,
-        index=prior_choices.index(default_prior),
-        key="prior_shift",
-    )
-    prior_id = None if prior_pick == "— no comparison —" else prior_pick
-else:
-    cur_id = shifts[-1]
-    prior_id = None
+cur_id = shifts[-1]
+prior_id = shifts[-2] if len(shifts) > 1 else None
 
 cur_recs = df[df["shift_id"] == cur_id]
 cur = summarize(cur_recs)
@@ -296,9 +274,9 @@ st.caption(cur_id.upper())
 st.header(f"{period} report")
 meta = f"{date_str} · {cur['line_count']} lines · {cur['machines']} machines"
 if prior_id:
-    meta += f" · vs {prior_id}"
+    meta += f" · vs prior shift {prior_id}"
 else:
-    meta += " · no comparison selected"
+    meta += " · no prior shift in this log"
 st.caption(meta)
 
 # At a glance
@@ -317,23 +295,21 @@ c4.metric("Defect rate", f"{cur['defect_rate'] * 100:.1f}%",
           delta=f"{(cur['defect_rate'] - p['defect_rate']) * 100:+.1f} pts" if prior else None,
           delta_color="inverse")
 
-# Defects by line — the comparison column is named after the shift the user
-# chose (or a neutral "Compared" header when no comparison is selected).
+# Defects by line
 st.subheader("Defects by line")
-cmp_col = prior_id if prior_id else "Compared"
 rows = []
 for line in sorted(cur["lines"]):
     pv = prior["lines"].get(line) if prior else None
     rows.append({
         "Line": line,
         "Defects": cur["lines"][line],
-        cmp_col: pv if pv is not None else "—",
+        "Prior": pv if pv is not None else "—",
         "Δ": (cur["lines"][line] - pv) if pv is not None else "—",
     })
 rows.append({
     "Line": "All lines",
     "Defects": cur["defects"],
-    cmp_col: prior["defects"] if prior else "—",
+    "Prior": prior["defects"] if prior else "—",
     "Δ": (cur["defects"] - prior["defects"]) if prior else "—",
 })
 st.table(pd.DataFrame(rows).set_index("Line"))

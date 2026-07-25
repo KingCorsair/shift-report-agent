@@ -34,22 +34,6 @@ point it at this repo with `streamlit_app.py` as the main file.
 **Download** it as a text file. All parsing and computation happen in the page —
 no server, no network.
 
-## Compare any two shifts
-
-By default the report compares the **latest** shift against the one immediately
-before it. When a log holds two or more shifts, a **Compare shifts** control
-appears at the top of the report with two dropdowns:
-
-- **Report on** — which shift is the current one.
-- **Compare against** — the baseline shift, or **— no comparison —** to view a
-  single shift on its own.
-
-Changing either dropdown re-renders everything against the chosen pair: the
-at-a-glance deltas, the defects-by-line Δ column, the exception flags (the
-per-machine rules that measure against the prior shift), and the downloadable
-text report. The Streamlit app (`streamlit_app.py`) exposes the same picker as
-two select boxes.
-
 ## Log format
 
 One row per machine per shift:

@@ -97,13 +97,6 @@
   .report.show { display: block; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
 
-  /* Compare shifts control */
-  .cmp-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
-  .cmp-row label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .cmp-row select { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 12px; min-width: 200px; }
-  .cmp-row select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .cmp-vs { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--faint); padding-bottom: 10px; }
-
   .rhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 4px; }
   .rhead .shift { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
   .rhead h2 { margin: 4px 0 0; font-size: 22px; letter-spacing: -0.015em; }
@@ -169,7 +162,7 @@
     <div>
       <div class="tag">Fabrication · End of Shift</div>
       <h1>Production Shift Report Agent</h1>
-      <p class="sub">Drop a machine-output log and get a one-page shift report — units, downtime, and defects by line, measured against another shift you pick, with anything abnormal flagged.</p>
+      <p class="sub">Drop a machine-output log and get a one-page shift report — units, downtime, and defects by line, measured against the prior shift, with anything abnormal flagged.</p>
     </div>
   </header>
 
@@ -308,7 +301,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
         const crit = r.downtime > 90;
         out.push({
           sev: crit ? "critical" : "warning", who: `${r.machine_id} · ${r.line}`, kind: "Downtime",
-          msg: `Stopped <b>${r.downtime} min</b>${p ? ` vs ${p.downtime} in the compared shift` : ""}. Check the machine before the next run.`,
+          msg: `Stopped <b>${r.downtime} min</b>${p ? ` vs ${p.downtime} last shift` : ""}. Check the machine before the next run.`,
           sort: crit ? 0 : 2, num: r.downtime,
         });
       }
@@ -318,7 +311,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
         const crit = share > 0.40;
         out.push({
           sev: crit ? "critical" : "warning", who: `${r.machine_id} · ${r.line}`, kind: "Defects",
-          msg: `Produced <b>${r.defects} defects</b>${p ? ` vs ${p.defects} in the compared shift` : ""} — <b>${Math.round(share*100)}%</b> of the shift's total. Inspect tooling/material.`,
+          msg: `Produced <b>${r.defects} defects</b>${p ? ` vs ${p.defects} last shift` : ""} — <b>${Math.round(share*100)}%</b> of the shift's total. Inspect tooling/material.`,
           sort: crit ? 0 : 1, num: r.defects,
         });
       }
@@ -328,7 +321,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
         if (drop > 0.30) {
           out.push({
             sev: "warning", who: `${r.machine_id} · ${r.line}`, kind: "Output",
-            msg: `Output fell <b>${Math.round(drop*100)}%</b> — <b>${r.units}</b> units vs ${p.units} in the compared shift.`,
+            msg: `Output fell <b>${Math.round(drop*100)}%</b> — <b>${r.units}</b> units vs ${p.units} last shift.`,
             sort: 3, num: -r.units,
           });
         }
@@ -338,7 +331,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     if (cur.defectRate > 0.03) {
       out.push({
         sev: "warning", who: "Whole shift", kind: "Defect rate",
-        msg: `Shift defect rate <b>${(cur.defectRate*100).toFixed(1)}%</b> is above the 3% line${prior ? ` (compared shift ${(prior.defectRate*100).toFixed(1)}%)` : ""}.`,
+        msg: `Shift defect rate <b>${(cur.defectRate*100).toFixed(1)}%</b> is above the 3% line${prior ? ` (was ${(prior.defectRate*100).toFixed(1)}% last shift)` : ""}.`,
         sort: 2.5, num: cur.defectRate,
       });
     }
@@ -358,7 +351,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     return { d, pct, cls, arrow };
   }
   function deltaText(delta, unit) {
-    if (!delta) return "no comparison";
+    if (!delta) return "no prior shift";
     if (delta.d === 0) return "unchanged";
     const pctStr = Number.isFinite(delta.pct) ? `${delta.d > 0 ? "+" : ""}${delta.pct.toFixed(1)}%` : "new";
     return `${delta.arrow} ${delta.d > 0 ? "+" : "−"}${fmt(Math.abs(delta.d))}${unit} · ${pctStr}`;
@@ -367,26 +360,15 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
 
   // ---- Render ----
-  // sel (optional) = { curId, priorId } — lets the user compare any two shifts.
-  // priorId === "" means "no comparison". Omit sel for the default
-  // latest-vs-previous view.
-  function render(recs, sel) {
+  function render(recs) {
     const byShift = new Map();
     recs.forEach(r => {
       if (!byShift.has(r.shift_id)) byShift.set(r.shift_id, { id: r.shift_id, start: r.shift_start, recs: [] });
       byShift.get(r.shift_id).recs.push(r);
     });
     const shifts = [...byShift.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
-    const byId = (id) => shifts.find(s => s.id === id);
-
-    let curShift, priorShift;
-    if (sel && byId(sel.curId)) {
-      curShift = byId(sel.curId);
-      priorShift = (sel.priorId && sel.priorId !== sel.curId) ? byId(sel.priorId) || null : null;
-    } else {
-      curShift = shifts[shifts.length - 1];
-      priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
-    }
+    const curShift = shifts[shifts.length - 1];
+    const priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
 
     const cur = summarize(curShift.recs);
     const prior = priorShift ? summarize(priorShift.recs) : null;
@@ -402,7 +384,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     const dDown = deltaObj(cur.downtime, prior && prior.downtime, false);
     const dDef = deltaObj(cur.defects, prior && prior.defects, false);
     const dRate = deltaObj(cur.defectRate, prior && prior.defectRate, false);
-    const rateDeltaTxt = !dRate ? "no comparison" : dRate.d === 0 ? "unchanged" :
+    const rateDeltaTxt = !dRate ? "no prior shift" : dRate.d === 0 ? "unchanged" :
       `${dRate.arrow} ${dRate.d > 0 ? "+" : "−"}${Math.abs(dRate.d*100).toFixed(1)} pts`;
 
     const kpi = (label, val, deltaHtml) =>
@@ -430,10 +412,9 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
         <td class="num">${pv == null ? "—" : (v - pv > 0 ? "+" : v - pv < 0 ? "−" : "") + fmt(Math.abs(v - pv))}</td>
       </tr>`;
     }).join("");
-    const cmpLabel = prior ? esc(priorShift.id) : "Compared";
     const lineTable = `
       <div class="tscroll"><table>
-        <thead><tr><th>Line</th><th class="num">Defects</th><th class="num">${cmpLabel}</th><th class="num">Δ</th></tr></thead>
+        <thead><tr><th>Line</th><th class="num">Defects</th><th class="num">Prior</th><th class="num">Δ</th></tr></thead>
         <tbody>
           ${lineRows}
           <tr class="total"><td>All lines</td><td class="num">${fmt(cur.defects)}</td><td class="num">${prior ? fmt(prior.defects) : "—"}</td><td class="num">${dDef ? (dDef.d>0?"+":dDef.d<0?"−":"")+fmt(Math.abs(dDef.d)) : "—"}</td></tr>
@@ -458,29 +439,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     // Bottom line
     const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
 
-    // Compare-shifts control (only meaningful with two or more shifts)
-    const optionTags = (selected, excludeId) => shifts
-      .filter(s => s.id !== excludeId)
-      .map(s => `<option value="${esc(s.id)}"${s.id === selected ? " selected" : ""}>${esc(s.id)}</option>`)
-      .join("");
-    const compareHtml = shifts.length > 1 ? `
-      <div class="card">
-        <p class="eyebrow">Compare shifts</p>
-        <div class="cmp-row">
-          <label>Report on
-            <select id="selCur">${optionTags(curShift.id, null)}</select>
-          </label>
-          <span class="cmp-vs">vs</span>
-          <label>Compare against
-            <select id="selPrior">
-              <option value=""${priorShift ? "" : " selected"}>— no comparison —</option>
-              ${optionTags(priorShift ? priorShift.id : null, curShift.id)}
-            </select>
-          </label>
-        </div>
-      </div>` : "";
-
-    el.report.innerHTML = compareHtml + `
+    el.report.innerHTML = `
       <div class="card">
         <div class="rhead">
           <div>
@@ -488,7 +447,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
             <h2>${period} report</h2>
             <div class="meta">${dateStr} · ${cur.lineCount} lines · ${cur.machines} machines</div>
           </div>
-          <div class="prior">${prior ? "compared to<br>" + esc(priorShift.id) : "no comparison<br>selected"}</div>
+          <div class="prior">${prior ? "vs prior shift<br>" + esc(priorShift.id) : "no prior shift<br>in this log"}</div>
         </div>
       </div>
 
@@ -524,19 +483,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     const reportText = buildTextReport(curShift, priorShift, cur, prior, exceptions, dateStr, period);
     document.getElementById("dl").addEventListener("click", () => exportReport(reportText, curShift.id));
     document.getElementById("copy").addEventListener("click", (e) => copyReport(reportText, e.currentTarget));
-
-    // Wire the compare selectors: re-render with the chosen pair.
-    const selCur = document.getElementById("selCur");
-    const selPrior = document.getElementById("selPrior");
-    if (selCur && selPrior) {
-      const rerender = () => render(recs, { curId: selCur.value, priorId: selPrior.value });
-      selCur.addEventListener("change", rerender);
-      selPrior.addEventListener("change", rerender);
-    }
-
-    // Keep the compare control in view when the user is switching shifts;
-    // only auto-scroll on the first (default) render.
-    if (!sel) el.report.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.report.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function buildBottomLine(cur, prior, exceptions, dUnits) {
@@ -560,25 +507,22 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     L.push(`${period} · ${curShift.id}`);
     L.push(`${dateStr} · ${cur.lineCount} lines · ${cur.machines} machines`);
     L.push(rule, "");
-    // The compared shift is user-chosen, so name it rather than assume it's
-    // the earlier ("prior") one.
-    const cmp = priorShift ? priorShift.id : null;
     const dl = (cur_, prev, unit) => {
-      if (prev == null) return "(no comparison)";
+      if (prev == null) return "(no prior shift)";
       const d = cur_ - prev;
       const pct = prev !== 0 ? (d / prev) * 100 : 0;
-      return `${d >= 0 ? "up" : "down"} ${fmt(Math.abs(d))}${unit} (${d>=0?"+":""}${pct.toFixed(1)}%)`;
+      return `${d >= 0 ? "up" : "down"} ${fmt(Math.abs(d))}${unit} (${d>=0?"+":""}${pct.toFixed(1)}%) vs prior`;
     };
-    L.push(cmp ? `AT A GLANCE   (vs ${cmp})` : "AT A GLANCE");
+    L.push("AT A GLANCE");
     L.push(`  Units produced   ${fmt(cur.units).padStart(8)}   ${dl(cur.units, prior&&prior.units, "")}`);
     L.push(`  Downtime         ${(fmt(cur.downtime)+" min").padStart(8)}   ${dl(cur.downtime, prior&&prior.downtime, " min")}`);
     L.push(`  Defects          ${fmt(cur.defects).padStart(8)}   ${dl(cur.defects, prior&&prior.defects, "")}`);
-    L.push(`  Defect rate      ${((cur.defectRate*100).toFixed(1)+"%").padStart(8)}   ${prior ? "compared "+(prior.defectRate*100).toFixed(1)+"%" : "(no comparison)"}`);
+    L.push(`  Defect rate      ${((cur.defectRate*100).toFixed(1)+"%").padStart(8)}   ${prior ? "was "+(prior.defectRate*100).toFixed(1)+"%" : "(no prior shift)"}`);
     L.push("");
-    L.push(cmp ? `DEFECTS BY LINE   (vs ${cmp})` : "DEFECTS BY LINE");
+    L.push("DEFECTS BY LINE");
     Object.keys(cur.lines).sort().forEach(l => {
       const pv = prior && prior.lines[l] != null ? prior.lines[l] : null;
-      L.push(`  ${l.padEnd(12)} ${fmt(cur.lines[l]).padStart(4)}${pv != null ? `   (compared ${fmt(pv)})` : ""}`);
+      L.push(`  ${l.padEnd(12)} ${fmt(cur.lines[l]).padStart(4)}${pv != null ? `   (prior ${fmt(pv)})` : ""}`);
     });
     L.push("");
     L.push("EXCEPTIONS");
