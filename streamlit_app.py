@@ -248,12 +248,30 @@ except ValueError as err:
     st.error(str(err))
     st.stop()
 
-# Latest shift (by shift_start) is current; the one before it is prior.
+# Shifts ordered by start time. By default the latest is current and the one
+# before it is prior — but with two or more shifts the user can compare any pair.
 shifts = (
     df.groupby("shift_id")["shift_start"].min().sort_values().index.tolist()
 )
-cur_id = shifts[-1]
-prior_id = shifts[-2] if len(shifts) > 1 else None
+
+if len(shifts) > 1:
+    st.subheader("Compare shifts")
+    cc1, cc2 = st.columns(2)
+    cur_id = cc1.selectbox(
+        "Report on", shifts, index=len(shifts) - 1, key="cur_shift"
+    )
+    prior_choices = ["— no comparison —"] + [s for s in shifts if s != cur_id]
+    default_prior = shifts[-2] if cur_id == shifts[-1] else "— no comparison —"
+    prior_pick = cc2.selectbox(
+        "Compare against",
+        prior_choices,
+        index=prior_choices.index(default_prior),
+        key="prior_shift",
+    )
+    prior_id = None if prior_pick == "— no comparison —" else prior_pick
+else:
+    cur_id = shifts[-1]
+    prior_id = None
 
 cur_recs = df[df["shift_id"] == cur_id]
 cur = summarize(cur_recs)

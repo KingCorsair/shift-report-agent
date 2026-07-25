@@ -97,6 +97,13 @@
   .report.show { display: block; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
 
+  /* Compare shifts control */
+  .cmp-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+  .cmp-row label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .cmp-row select { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 12px; min-width: 200px; }
+  .cmp-row select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cmp-vs { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--faint); padding-bottom: 10px; }
+
   .rhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 4px; }
   .rhead .shift { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
   .rhead h2 { margin: 4px 0 0; font-size: 22px; letter-spacing: -0.015em; }
@@ -360,15 +367,26 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
 
   // ---- Render ----
-  function render(recs) {
+  // sel (optional) = { curId, priorId } — lets the user compare any two shifts.
+  // priorId === "" means "no comparison". Omit sel for the default
+  // latest-vs-previous view.
+  function render(recs, sel) {
     const byShift = new Map();
     recs.forEach(r => {
       if (!byShift.has(r.shift_id)) byShift.set(r.shift_id, { id: r.shift_id, start: r.shift_start, recs: [] });
       byShift.get(r.shift_id).recs.push(r);
     });
     const shifts = [...byShift.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
-    const curShift = shifts[shifts.length - 1];
-    const priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
+    const byId = (id) => shifts.find(s => s.id === id);
+
+    let curShift, priorShift;
+    if (sel && byId(sel.curId)) {
+      curShift = byId(sel.curId);
+      priorShift = (sel.priorId && sel.priorId !== sel.curId) ? byId(sel.priorId) || null : null;
+    } else {
+      curShift = shifts[shifts.length - 1];
+      priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
+    }
 
     const cur = summarize(curShift.recs);
     const prior = priorShift ? summarize(priorShift.recs) : null;
@@ -439,7 +457,29 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     // Bottom line
     const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
 
-    el.report.innerHTML = `
+    // Compare-shifts control (only meaningful with two or more shifts)
+    const optionTags = (selected, excludeId) => shifts
+      .filter(s => s.id !== excludeId)
+      .map(s => `<option value="${esc(s.id)}"${s.id === selected ? " selected" : ""}>${esc(s.id)}</option>`)
+      .join("");
+    const compareHtml = shifts.length > 1 ? `
+      <div class="card">
+        <p class="eyebrow">Compare shifts</p>
+        <div class="cmp-row">
+          <label>Report on
+            <select id="selCur">${optionTags(curShift.id, null)}</select>
+          </label>
+          <span class="cmp-vs">vs</span>
+          <label>Compare against
+            <select id="selPrior">
+              <option value=""${priorShift ? "" : " selected"}>— no comparison —</option>
+              ${optionTags(priorShift ? priorShift.id : null, curShift.id)}
+            </select>
+          </label>
+        </div>
+      </div>` : "";
+
+    el.report.innerHTML = compareHtml + `
       <div class="card">
         <div class="rhead">
           <div>
@@ -483,7 +523,19 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     const reportText = buildTextReport(curShift, priorShift, cur, prior, exceptions, dateStr, period);
     document.getElementById("dl").addEventListener("click", () => exportReport(reportText, curShift.id));
     document.getElementById("copy").addEventListener("click", (e) => copyReport(reportText, e.currentTarget));
-    el.report.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // Wire the compare selectors: re-render with the chosen pair.
+    const selCur = document.getElementById("selCur");
+    const selPrior = document.getElementById("selPrior");
+    if (selCur && selPrior) {
+      const rerender = () => render(recs, { curId: selCur.value, priorId: selPrior.value });
+      selCur.addEventListener("change", rerender);
+      selPrior.addEventListener("change", rerender);
+    }
+
+    // Keep the compare control in view when the user is switching shifts;
+    // only auto-scroll on the first (default) render.
+    if (!sel) el.report.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function buildBottomLine(cur, prior, exceptions, dUnits) {
