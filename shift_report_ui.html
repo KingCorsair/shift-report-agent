@@ -97,6 +97,14 @@
   .report.show { display: block; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
 
+  /* Compared-to-prior-shift narrative */
+  .cmp-lead { font-size: 14px; margin: 0 0 10px; color: var(--muted); }
+  .cmp-lead b { color: var(--ink); font-family: var(--mono); font-size: 13px; }
+  .cmp-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
+  .cmp-list li { margin-bottom: 4px; }
+  .cmp-list b { font-variant-numeric: tabular-nums; }
+  .cmp-none { font-size: 14px; color: var(--muted); margin: 0; }
+
   .rhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 4px; }
   .rhead .shift { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
   .rhead h2 { margin: 4px 0 0; font-size: 22px; letter-spacing: -0.015em; }
@@ -359,6 +367,38 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
 
   function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
 
+  // ---- Plain-language shift-over-shift comparison (for Yogita's section) ----
+  // Returns an array of plain sentences describing how this shift differs from
+  // the prior one, or null when there's no prior shift. Numbers are wrapped in
+  // <b> for the on-screen version; the text report strips the tags.
+  function comparisonLines(cur, prior) {
+    if (!prior) return null;
+    const dir = (d) => d > 0 ? "up" : d < 0 ? "down" : "unchanged";
+    const pct = (d, prev) => prev !== 0 ? ` (${d > 0 ? "+" : "−"}${Math.abs(d / prev * 100).toFixed(1)}%)` : "";
+    const chg = (d, prev, unit) => d === 0 ? "unchanged" : `${dir(d)} <b>${fmt(Math.abs(d))}${unit}</b>${pct(d, prev)}`;
+
+    const du = cur.units - prior.units;
+    const dd = cur.downtime - prior.downtime;
+    const df = cur.defects - prior.defects;
+    const lines = [
+      `Output ${chg(du, prior.units, "")} — <b>${fmt(cur.units)}</b> units this shift vs <b>${fmt(prior.units)}</b> last shift.`,
+      `Downtime ${chg(dd, prior.downtime, " min")} — <b>${fmt(cur.downtime)} min</b> vs <b>${fmt(prior.downtime)} min</b>.`,
+      `Defects ${chg(df, prior.defects, "")} — <b>${fmt(cur.defects)}</b> vs <b>${fmt(prior.defects)}</b>, and the defect rate went from <b>${(prior.defectRate*100).toFixed(1)}%</b> to <b>${(cur.defectRate*100).toFixed(1)}%</b>.`,
+    ];
+
+    // Biggest single line change, in either direction.
+    const names = new Set([...Object.keys(cur.lines), ...Object.keys(prior.lines)]);
+    let big = null;
+    names.forEach(l => {
+      const v = cur.lines[l] || 0, pv = prior.lines[l] || 0, delta = v - pv;
+      if (!big || Math.abs(delta) > Math.abs(big.delta)) big = { l, v, pv, delta };
+    });
+    if (big && big.delta !== 0) {
+      lines.push(`Biggest change by line: <b>${esc(big.l)}</b> defects ${big.delta > 0 ? "up" : "down"} <b>${fmt(Math.abs(big.delta))}</b> (${fmt(big.pv)} → ${fmt(big.v)}).`);
+    }
+    return lines;
+  }
+
   // ---- Render ----
   function render(recs) {
     const byShift = new Map();
@@ -439,6 +479,9 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     // Bottom line
     const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
 
+    // Plain-language comparison against the prior shift
+    const cmpLines = comparisonLines(cur, prior);
+
     el.report.innerHTML = `
       <div class="card">
         <div class="rhead">
@@ -454,6 +497,14 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
       <div class="card">
         <p class="eyebrow">At a glance</p>
         ${kpisHtml}
+      </div>
+
+      <div class="card">
+        <p class="eyebrow">Compared to the prior shift</p>
+        ${cmpLines
+          ? `<p class="cmp-lead">Versus the previous shift (<b>${esc(priorShift.id)}</b>):</p>
+             <ul class="cmp-list">${cmpLines.map(t => `<li>${t}</li>`).join("")}</ul>`
+          : `<p class="cmp-none">This is the only shift in the log, so there's no prior shift to compare against yet.</p>`}
       </div>
 
       <div class="card">
@@ -518,6 +569,15 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     L.push(`  Downtime         ${(fmt(cur.downtime)+" min").padStart(8)}   ${dl(cur.downtime, prior&&prior.downtime, " min")}`);
     L.push(`  Defects          ${fmt(cur.defects).padStart(8)}   ${dl(cur.defects, prior&&prior.defects, "")}`);
     L.push(`  Defect rate      ${((cur.defectRate*100).toFixed(1)+"%").padStart(8)}   ${prior ? "was "+(prior.defectRate*100).toFixed(1)+"%" : "(no prior shift)"}`);
+    L.push("");
+    L.push("COMPARED TO THE PRIOR SHIFT");
+    const cmpLines = comparisonLines(cur, prior);
+    if (cmpLines) {
+      L.push(`  Versus ${priorShift.id}:`);
+      cmpLines.forEach(t => L.push(`  - ${t.replace(/<\/?b>/g, "")}`));
+    } else {
+      L.push("  This is the only shift in the log — no prior shift to compare against.");
+    }
     L.push("");
     L.push("DEFECTS BY LINE");
     Object.keys(cur.lines).sort().forEach(l => {

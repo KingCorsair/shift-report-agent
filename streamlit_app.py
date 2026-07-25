@@ -163,6 +163,54 @@ def bottom_line(cur: dict, prior: dict | None, exceptions: list[dict]) -> str:
             f"{cur['defect_rate'] * 100:.1f}% defect rate, no exceptions flagged.")
 
 
+def comparison_lines(cur: dict, prior: dict | None) -> list[str] | None:
+    """Plain-language sentences on how this shift differs from the prior one,
+    for the report's 'Compared to the prior shift' section. Bold uses markdown
+    (**) for the on-screen version; the text report strips it. None when there
+    is no prior shift."""
+    if not prior:
+        return None
+
+    def direction(d):
+        return "up" if d > 0 else "down" if d < 0 else "unchanged"
+
+    def pct(d, prev):
+        return f" ({d / prev * 100:+.1f}%)" if prev else ""
+
+    def chg(d, prev, unit):
+        return "unchanged" if d == 0 else f"{direction(d)} **{fmt(abs(d))}{unit}**{pct(d, prev)}"
+
+    du = cur["units"] - prior["units"]
+    dd = cur["downtime"] - prior["downtime"]
+    df = cur["defects"] - prior["defects"]
+    lines = [
+        f"Output {chg(du, prior['units'], '')} — **{fmt(cur['units'])}** units "
+        f"this shift vs **{fmt(prior['units'])}** last shift.",
+        f"Downtime {chg(dd, prior['downtime'], ' min')} — "
+        f"**{fmt(cur['downtime'])} min** vs **{fmt(prior['downtime'])} min**.",
+        f"Defects {chg(df, prior['defects'], '')} — **{fmt(cur['defects'])}** vs "
+        f"**{fmt(prior['defects'])}**, and the defect rate went from "
+        f"**{prior['defect_rate'] * 100:.1f}%** to **{cur['defect_rate'] * 100:.1f}%**.",
+    ]
+
+    names = set(cur["lines"]) | set(prior["lines"])
+    big = None
+    for line in names:
+        v = cur["lines"].get(line, 0)
+        pv = prior["lines"].get(line, 0)
+        delta = v - pv
+        if big is None or abs(delta) > abs(big[3]):
+            big = (line, v, pv, delta)
+    if big and big[3] != 0:
+        line, v, pv, delta = big
+        lines.append(
+            f"Biggest change by line: **{line}** defects "
+            f"{'up' if delta > 0 else 'down'} **{fmt(abs(delta))}** "
+            f"({fmt(pv)} → {fmt(v)})."
+        )
+    return lines
+
+
 def build_text_report(cur_shift, prior_shift, cur, prior, exceptions,
                       date_str, period) -> str:
     rule = "=" * 58
@@ -185,6 +233,15 @@ def build_text_report(cur_shift, prior_shift, cur, prior, exceptions,
     rate_note = f"was {prior['defect_rate'] * 100:.1f}%" if prior else "(no prior shift)"
     rate_val = f"{cur['defect_rate'] * 100:.1f}%"
     L.append(f"  Defect rate      {rate_val:>8}   {rate_note}")
+    L.append("")
+    L.append("COMPARED TO THE PRIOR SHIFT")
+    cl = comparison_lines(cur, prior)
+    if cl:
+        L.append(f"  Versus {prior_shift['id']}:")
+        for t in cl:
+            L.append(f"  - {t.replace('**', '')}")
+    else:
+        L.append("  This is the only shift in the log — no prior shift to compare against.")
     L.append("")
     L.append("DEFECTS BY LINE")
     for line in sorted(cur["lines"]):
@@ -294,6 +351,18 @@ c3.metric("Defects", fmt(cur["defects"]),
 c4.metric("Defect rate", f"{cur['defect_rate'] * 100:.1f}%",
           delta=f"{(cur['defect_rate'] - p['defect_rate']) * 100:+.1f} pts" if prior else None,
           delta_color="inverse")
+
+# Compared to the prior shift — a plain-language read of the differences.
+st.subheader("Compared to the prior shift")
+cmp = comparison_lines(cur, prior)
+if cmp:
+    st.markdown(f"Versus the previous shift (`{prior_id}`):")
+    st.markdown("\n".join(f"- {line}" for line in cmp))
+else:
+    st.markdown(
+        "This is the only shift in the log, so there's no prior shift to "
+        "compare against yet."
+    )
 
 # Defects by line
 st.subheader("Defects by line")
