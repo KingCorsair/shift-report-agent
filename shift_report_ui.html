@@ -82,11 +82,6 @@
   .drop .small { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   .drop .fname { font-family: var(--mono); font-size: 12.5px; color: var(--accent); margin-top: 10px; word-break: break-all; }
 
-  .cmprow { display: flex; gap: 10px; align-items: center; padding: 0 16px 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
-  .cmprow label { font-weight: 600; }
-  .cmprow select { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 11px; }
-  .cmprow select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
   .bar { display: flex; gap: 10px; align-items: center; padding: 0 16px 16px; flex-wrap: wrap; }
   button { font-family: var(--sans); font-size: 13.5px; font-weight: 600; border-radius: 8px; cursor: pointer; border: 1px solid transparent; padding: 9px 16px; transition: filter .15s, background .15s; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -102,13 +97,12 @@
   .report.show { display: block; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
 
-  /* Compared-to-prior-shift narrative */
-  .cmp-lead { font-size: 14px; margin: 0 0 10px; color: var(--muted); }
-  .cmp-lead b { color: var(--ink); font-family: var(--mono); font-size: 13px; }
-  .cmp-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
-  .cmp-list li { margin-bottom: 4px; }
+  /* Separate comparison report (its own document below the shift report) */
+  .cmp-report { margin-top: 36px; padding-top: 30px; border-top: 3px double var(--border-strong); }
+  .cmp-list { margin: 0; padding-left: 20px; font-size: 14.5px; line-height: 1.75; }
+  .cmp-list li { margin-bottom: 5px; }
   .cmp-list b { font-variant-numeric: tabular-nums; }
-  .cmp-none { font-size: 14px; color: var(--muted); margin: 0; }
+  .cmp-none { color: var(--muted); font-size: 14px; margin: 0; }
 
   .rhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 4px; }
   .rhead .shift { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
@@ -188,10 +182,6 @@
       <div class="small">or click to browse · one row per machine per shift</div>
       <div id="fname" class="fname" hidden></div>
     </div>
-    <div id="cmpRow" class="cmprow" hidden>
-      <label for="cmpSelect">Compare the latest shift against</label>
-      <select id="cmpSelect"></select>
-    </div>
     <div class="bar">
       <button id="gen" class="btn-primary" disabled>Generate report</button>
       <button id="sample" class="btn-ghost">Load sample data</button>
@@ -235,8 +225,6 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     sample: document.getElementById("sample"),
     err: document.getElementById("err"),
     report: document.getElementById("report"),
-    cmpRow: document.getElementById("cmpRow"),
-    cmpSelect: document.getElementById("cmpSelect"),
   };
 
   let csvText = null;
@@ -378,26 +366,21 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
 
   function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c])); }
 
-  // ---- Plain-language shift-over-shift comparison (for Yogita's section) ----
-  // Returns an array of plain sentences describing how this shift differs from
-  // the prior one, or null when there's no prior shift. Numbers are wrapped in
-  // <b> for the on-screen version; the text report strips the tags.
+  // ---- Comparison report content (a separate report vs the prior shift) ----
+  // Plain-language sentences describing how the current shift differs from the
+  // prior one. Numbers are wrapped in <b> for on-screen; the text report strips
+  // the tags. Returns null when there's no prior shift.
   function comparisonLines(cur, prior) {
     if (!prior) return null;
     const dir = (d) => d > 0 ? "up" : d < 0 ? "down" : "unchanged";
     const pct = (d, prev) => prev !== 0 ? ` (${d > 0 ? "+" : "−"}${Math.abs(d / prev * 100).toFixed(1)}%)` : "";
     const chg = (d, prev, unit) => d === 0 ? "unchanged" : `${dir(d)} <b>${fmt(Math.abs(d))}${unit}</b>${pct(d, prev)}`;
-
-    const du = cur.units - prior.units;
-    const dd = cur.downtime - prior.downtime;
-    const df = cur.defects - prior.defects;
+    const du = cur.units - prior.units, dd = cur.downtime - prior.downtime, df = cur.defects - prior.defects;
     const lines = [
       `Output ${chg(du, prior.units, "")} — <b>${fmt(cur.units)}</b> units this shift vs <b>${fmt(prior.units)}</b>.`,
       `Downtime ${chg(dd, prior.downtime, " min")} — <b>${fmt(cur.downtime)} min</b> vs <b>${fmt(prior.downtime)} min</b>.`,
       `Defects ${chg(df, prior.defects, "")} — <b>${fmt(cur.defects)}</b> vs <b>${fmt(prior.defects)}</b>, and the defect rate went from <b>${(prior.defectRate*100).toFixed(1)}%</b> to <b>${(cur.defectRate*100).toFixed(1)}%</b>.`,
     ];
-
-    // Biggest single line change, in either direction.
     const names = new Set([...Object.keys(cur.lines), ...Object.keys(prior.lines)]);
     let big = null;
     names.forEach(l => {
@@ -410,11 +393,18 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     return lines;
   }
 
+  // Rows for the side-by-side table: [label, thisShift, priorShift, deltaObj, changeText].
+  function comparisonRows(cur, prior, dUnits, dDown, dDef, dRate, rateDeltaTxt) {
+    return [
+      ["Units produced", fmt(cur.units), fmt(prior.units), dUnits, deltaText(dUnits, "")],
+      ["Downtime", fmt(cur.downtime) + " min", fmt(prior.downtime) + " min", dDown, deltaText(dDown, " min")],
+      ["Defects", fmt(cur.defects), fmt(prior.defects), dDef, deltaText(dDef, "")],
+      ["Defect rate", (cur.defectRate*100).toFixed(1) + "%", (prior.defectRate*100).toFixed(1) + "%", dRate, rateDeltaTxt],
+    ];
+  }
+
   // ---- Render ----
-  // The report is always about the latest shift. cmpId (optional) picks which
-  // earlier shift to compare it against; omit it to default to the immediately
-  // prior shift.
-  function render(recs, cmpId) {
+  function render(recs) {
     const byShift = new Map();
     recs.forEach(r => {
       if (!byShift.has(r.shift_id)) byShift.set(r.shift_id, { id: r.shift_id, start: r.shift_start, recs: [] });
@@ -422,8 +412,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     });
     const shifts = [...byShift.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
     const curShift = shifts[shifts.length - 1];
-    let priorShift = cmpId ? shifts.find(s => s.id === cmpId && s.id !== curShift.id) : null;
-    if (!priorShift) priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
+    const priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
 
     const cur = summarize(curShift.recs);
     const prior = priorShift ? summarize(priorShift.recs) : null;
@@ -494,8 +483,59 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     // Bottom line
     const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
 
-    // Plain-language comparison against the prior shift
+    // Separate comparison report (its own document, vs the prior shift)
     const cmpLines = comparisonLines(cur, prior);
+    let comparisonHtml;
+    if (prior) {
+      const rows = comparisonRows(cur, prior, dUnits, dDown, dDef, dRate, rateDeltaTxt).map(
+        ([label, a, b, dobj, chgTxt]) => `<tr>
+          <td>${label}</td>
+          <td class="num">${a}</td>
+          <td class="num">${b}</td>
+          <td class="num"><span class="delta ${dobj ? dobj.cls : "flat"}">${chgTxt}</span></td>
+        </tr>`).join("");
+      comparisonHtml = `
+        <div class="cmp-report">
+          <div class="card">
+            <div class="rhead">
+              <div>
+                <div class="shift">Comparison report</div>
+                <h2>How this shift compares</h2>
+                <div class="meta">${esc(curShift.id)} vs prior shift ${esc(priorShift.id)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="eyebrow">In plain language</p>
+            <ul class="cmp-list">${cmpLines.map(t => `<li>${t}</li>`).join("")}</ul>
+          </div>
+
+          <div class="card">
+            <p class="eyebrow">Side by side</p>
+            <div class="tscroll"><table>
+              <thead><tr><th>Metric</th><th class="num">This shift</th><th class="num">Prior shift</th><th class="num">Change</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>
+            <div class="footer-bar" style="margin-top:18px">
+              <button id="copycmp" class="btn-ghost">Copy comparison</button>
+              <button id="dlcmp" class="btn-primary">Download comparison (.txt)</button>
+            </div>
+            <div id="exportcmp" class="export" hidden>
+              <textarea id="exportcmptext" readonly aria-label="Comparison report text"></textarea>
+              <div class="note">Your comparison report is ready above. If the file didn't download, select this text and copy it, or use <b>Copy comparison</b>.</div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      comparisonHtml = `
+        <div class="cmp-report">
+          <div class="card">
+            <p class="eyebrow">Comparison report</p>
+            <p class="cmp-none">This log has only one shift, so there's no prior shift to compare against.</p>
+          </div>
+        </div>`;
+    }
 
     el.report.innerHTML = `
       <div class="card">
@@ -512,14 +552,6 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
       <div class="card">
         <p class="eyebrow">At a glance</p>
         ${kpisHtml}
-      </div>
-
-      <div class="card">
-        <p class="eyebrow">Compared to the prior shift</p>
-        ${cmpLines
-          ? `<p class="cmp-lead">Versus <b>${esc(priorShift.id)}</b>:</p>
-             <ul class="cmp-list">${cmpLines.map(t => `<li>${t}</li>`).join("")}</ul>`
-          : `<p class="cmp-none">This is the only shift in the log, so there's no prior shift to compare against yet.</p>`}
       </div>
 
       <div class="card">
@@ -543,13 +575,43 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
           <textarea id="exporttext" readonly aria-label="Shift report text"></textarea>
           <div class="note">Your report is ready above. If the file didn't download, select this text and copy it, or use <b>Copy report</b>.</div>
         </div>
-      </div>`;
+      </div>` + comparisonHtml;
 
     el.report.classList.add("show");
     const reportText = buildTextReport(curShift, priorShift, cur, prior, exceptions, dateStr, period);
     document.getElementById("dl").addEventListener("click", () => exportReport(reportText, curShift.id));
     document.getElementById("copy").addEventListener("click", (e) => copyReport(reportText, e.currentTarget));
+
+    // The comparison report is a separate downloadable document.
+    if (prior) {
+      const cmpText = buildComparisonReport(curShift, priorShift, cur, prior, cmpLines, dateStr, period);
+      document.getElementById("dlcmp").addEventListener("click", () => exportReport(cmpText, curShift.id + "-comparison", "exportcmp", "exportcmptext"));
+      document.getElementById("copycmp").addEventListener("click", (e) => copyReport(cmpText, e.currentTarget, "exportcmp", "exportcmptext"));
+    }
     el.report.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- Plain-text comparison report (separate download) ----
+  function buildComparisonReport(curShift, priorShift, cur, prior, cmpLines, dateStr, period) {
+    const rule = "=".repeat(58);
+    const L = [rule, "SHIFT COMPARISON REPORT",
+      `${period} · ${curShift.id}`,
+      `vs prior shift · ${priorShift.id}`,
+      `${dateStr}`, rule, ""];
+    L.push("IN PLAIN LANGUAGE");
+    cmpLines.forEach(t => L.push(`  - ${t.replace(/<\/?b>/g, "")}`));
+    L.push("");
+    L.push("SIDE BY SIDE");
+    L.push(`  ${"Metric".padEnd(16)} ${"This shift".padStart(12)} ${"Prior shift".padStart(12)}`);
+    const row = (label, a, b) => L.push(`  ${label.padEnd(16)} ${String(a).padStart(12)} ${String(b).padStart(12)}`);
+    row("Units produced", fmt(cur.units), fmt(prior.units));
+    row("Downtime", fmt(cur.downtime) + " min", fmt(prior.downtime) + " min");
+    row("Defects", fmt(cur.defects), fmt(prior.defects));
+    row("Defect rate", (cur.defectRate*100).toFixed(1) + "%", (prior.defectRate*100).toFixed(1) + "%");
+    L.push("");
+    L.push(rule);
+    L.push(`Generated ${new Date().toLocaleString("en-US")} · Shift Report Agent`);
+    return L.join("\n");
   }
 
   function buildBottomLine(cur, prior, exceptions, dUnits) {
@@ -585,15 +647,6 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     L.push(`  Defects          ${fmt(cur.defects).padStart(8)}   ${dl(cur.defects, prior&&prior.defects, "")}`);
     L.push(`  Defect rate      ${((cur.defectRate*100).toFixed(1)+"%").padStart(8)}   ${prior ? "was "+(prior.defectRate*100).toFixed(1)+"%" : "(no prior shift)"}`);
     L.push("");
-    L.push("COMPARED TO THE PRIOR SHIFT");
-    const cmpLines = comparisonLines(cur, prior);
-    if (cmpLines) {
-      L.push(`  Versus ${priorShift.id}:`);
-      cmpLines.forEach(t => L.push(`  - ${t.replace(/<\/?b>/g, "")}`));
-    } else {
-      L.push("  This is the only shift in the log — no prior shift to compare against.");
-    }
-    L.push("");
     L.push("DEFECTS BY LINE");
     Object.keys(cur.lines).sort().forEach(l => {
       const pv = prior && prior.lines[l] != null ? prior.lines[l] : null;
@@ -620,9 +673,11 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   }
 
   // Reveal the report text inline (always works) and attempt a real file download.
-  function exportReport(text, shiftId) {
-    const box = document.getElementById("export");
-    const ta = document.getElementById("exporttext");
+  // boxId/taId default to the main report's export elements; the comparison
+  // report passes its own.
+  function exportReport(text, shiftId, boxId = "export", taId = "exporttext") {
+    const box = document.getElementById(boxId);
+    const ta = document.getElementById(taId);
     ta.value = text;
     box.hidden = false;
     tryDownload(text, `shift-report-${shiftId}.txt`);
@@ -641,11 +696,11 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     } catch (e) { /* fallback is the inline text box */ }
   }
 
-  function copyReport(text, btn) {
+  function copyReport(text, btn, boxId = "export", taId = "exporttext") {
     const done = () => { const old = btn.textContent; btn.textContent = "Copied ✓"; setTimeout(() => btn.textContent = old, 1600); };
     // Reveal the text too, so a manual copy is always possible.
-    const box = document.getElementById("export");
-    const ta = document.getElementById("exporttext");
+    const box = document.getElementById(boxId);
+    const ta = document.getElementById(taId);
     ta.value = text; box.hidden = false;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done).catch(() => selectFallback(ta, done));
@@ -660,39 +715,12 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   }
 
   // ---- Wiring ----
-  // Sorted list of shift ids in a log (earliest first), or [] if it won't parse.
-  function shiftIdsOf(text) {
-    let recs;
-    try { recs = toRecords(text); } catch (e) { return []; }
-    const seen = new Map();
-    recs.forEach(r => { if (!seen.has(r.shift_id)) seen.set(r.shift_id, r.shift_start); });
-    return [...seen.entries()]
-      .sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
-      .map(e => e[0]);
-  }
-
-  // Fill the "compare against" dropdown with every shift except the latest
-  // (the latest is always the report's subject). Default to the prior shift.
-  function populateCompare(text) {
-    const ids = shiftIdsOf(text);
-    if (ids.length > 1) {
-      const latest = ids[ids.length - 1];
-      el.cmpSelect.innerHTML = ids.filter(id => id !== latest)
-        .map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join("");
-      el.cmpSelect.value = ids[ids.length - 2]; // immediately prior, by default
-      el.cmpRow.hidden = false;
-    } else {
-      el.cmpRow.hidden = true;
-    }
-  }
-
   function setLoaded(name, text) {
     csvText = text;
     el.fname.hidden = false;
     el.fname.textContent = name;
     el.gen.disabled = false;
     el.err.textContent = "";
-    populateCompare(text);
   }
   function readFile(file) {
     if (!file) return;
@@ -715,7 +743,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     el.err.textContent = "";
     try {
       const recs = toRecords(csvText);
-      render(recs, el.cmpRow.hidden ? null : el.cmpSelect.value);
+      render(recs);
     } catch (err) {
       el.report.classList.remove("show");
       el.err.textContent = err.message || "Could not read this log.";

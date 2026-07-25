@@ -34,18 +34,19 @@ point it at this repo with `streamlit_app.py` as the main file.
 **Download** it as a text file. All parsing and computation happen in the page —
 no server, no network.
 
-## Compared to the prior shift
+## Two reports from one click
 
-Every report includes a **Compared to the prior shift** section that spells out,
-in plain English, how the latest shift stacked up against another — output,
-downtime, defects, defect rate, and the single biggest line change — so a
-non-engineer can read the difference at a glance. It's in both the on-screen
-report and the downloadable text.
+Pressing **Generate report** produces two reports:
 
-When a log has more than one shift, a **Compare the latest shift against**
-dropdown lets you choose which earlier shift to compare against before you press
-**Generate report**. It defaults to the immediately prior shift, so the standard
-latest-vs-previous report is one click with nothing to change.
+1. **Shift report** — totals, defects by line, exceptions, and a bottom line for
+   the latest shift.
+2. **Comparison report** — a *separate* report, below the first, that compares
+   the shift to the immediately prior one: a plain-language summary (output,
+   downtime, defects, defect rate, and the biggest line change) and a
+   side-by-side table. Each report has its own download button.
+
+The comparison report appears whenever the log has a prior shift; with a
+single-shift log it says so instead. Same behaviour in the Streamlit app.
 
 ## Log format
 
