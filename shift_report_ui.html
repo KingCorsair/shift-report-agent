@@ -99,6 +99,12 @@
 
   /* Separate comparison report (its own document below the shift report) */
   .cmp-report { margin-top: 36px; padding-top: 30px; border-top: 3px double var(--border-strong); }
+  .cmp-controls { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .cmp-controls select { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 11px; }
+  .cmp-controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cmp-vs { color: var(--faint); font-family: var(--mono); text-transform: uppercase; letter-spacing: .1em; font-size: 11px; }
+  .cmp-lead { font-size: 13.5px; color: var(--muted); margin: 0 0 12px; }
+  .cmp-lead b { color: var(--ink); font-family: var(--mono); font-size: 12.5px; }
   .cmp-list { margin: 0; padding-left: 20px; font-size: 14.5px; line-height: 1.75; }
   .cmp-list li { margin-bottom: 5px; }
   .cmp-list b { font-variant-numeric: tabular-nums; }
@@ -483,58 +489,89 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     // Bottom line
     const bottom = buildBottomLine(cur, prior, exceptions, dUnits);
 
-    // Separate comparison report (its own document, vs the prior shift)
-    const cmpLines = comparisonLines(cur, prior);
+    // Separate comparison report. Two selectors let the user compare any two
+    // shifts side by side; the body re-renders on change. Defaults to the
+    // latest shift vs the prior one.
+    const allIds = shifts.map(s => s.id);                       // earliest → latest
+    const summarizeById = (id) => summarize(byShift.get(id).recs);
     let comparisonHtml;
-    if (prior) {
-      const rows = comparisonRows(cur, prior, dUnits, dDown, dDef, dRate, rateDeltaTxt).map(
-        ([label, a, b, dobj, chgTxt]) => `<tr>
-          <td>${label}</td>
-          <td class="num">${a}</td>
-          <td class="num">${b}</td>
-          <td class="num"><span class="delta ${dobj ? dobj.cls : "flat"}">${chgTxt}</span></td>
-        </tr>`).join("");
+    if (allIds.length > 1) {
       comparisonHtml = `
         <div class="cmp-report">
           <div class="card">
             <div class="rhead">
               <div>
                 <div class="shift">Comparison report</div>
-                <h2>How this shift compares</h2>
-                <div class="meta">${esc(curShift.id)} vs prior shift ${esc(priorShift.id)}</div>
+                <h2>Compare two shifts</h2>
+                <div class="meta">Pick any two shifts to compare side by side.</div>
               </div>
             </div>
-          </div>
-
-          <div class="card">
-            <p class="eyebrow">In plain language</p>
-            <ul class="cmp-list">${cmpLines.map(t => `<li>${t}</li>`).join("")}</ul>
-          </div>
-
-          <div class="card">
-            <p class="eyebrow">Side by side</p>
-            <div class="tscroll"><table>
-              <thead><tr><th>Metric</th><th class="num">This shift</th><th class="num">Prior shift</th><th class="num">Change</th></tr></thead>
-              <tbody>${rows}</tbody>
-            </table></div>
-            <div class="footer-bar" style="margin-top:18px">
-              <button id="copycmp" class="btn-ghost">Copy comparison</button>
-              <button id="dlcmp" class="btn-primary">Download comparison (.txt)</button>
-            </div>
-            <div id="exportcmp" class="export" hidden>
-              <textarea id="exportcmptext" readonly aria-label="Comparison report text"></textarea>
-              <div class="note">Your comparison report is ready above. If the file didn't download, select this text and copy it, or use <b>Copy comparison</b>.</div>
+            <div class="cmp-controls">
+              <label>Compare <select id="cmpA"></select></label>
+              <span class="cmp-vs">against</span>
+              <label><select id="cmpB"></select></label>
             </div>
           </div>
+          <div id="cmpBody"></div>
         </div>`;
     } else {
       comparisonHtml = `
         <div class="cmp-report">
           <div class="card">
             <p class="eyebrow">Comparison report</p>
-            <p class="cmp-none">This log has only one shift, so there's no prior shift to compare against.</p>
+            <p class="cmp-none">This log has only one shift, so there's nothing to compare.</p>
           </div>
         </div>`;
+    }
+
+    // Fills #cmpBody with the plain-language summary, the side-by-side table,
+    // and its own download — for whichever two shifts (aId vs bId) are picked.
+    function renderComparison(aId, bId) {
+      const body = document.getElementById("cmpBody");
+      if (!body) return;
+      if (!aId || !bId || aId === bId) {
+        body.innerHTML = `<div class="card"><p class="cmp-none">Pick two different shifts to compare.</p></div>`;
+        return;
+      }
+      const A = summarizeById(aId), B = summarizeById(bId);
+      const dU = deltaObj(A.units, B.units, true);
+      const dD = deltaObj(A.downtime, B.downtime, false);
+      const dF = deltaObj(A.defects, B.defects, false);
+      const dR = deltaObj(A.defectRate, B.defectRate, false);
+      const rTxt = !dR ? "—" : dR.d === 0 ? "unchanged" :
+        `${dR.arrow} ${dR.d > 0 ? "+" : "−"}${Math.abs(dR.d*100).toFixed(1)} pts`;
+      const lines = comparisonLines(A, B);
+      const rowsHtml = comparisonRows(A, B, dU, dD, dF, dR, rTxt).map(
+        ([label, a, b, dobj, chgTxt]) => `<tr>
+          <td>${label}</td>
+          <td class="num">${a}</td>
+          <td class="num">${b}</td>
+          <td class="num"><span class="delta ${dobj ? dobj.cls : "flat"}">${chgTxt}</span></td>
+        </tr>`).join("");
+      body.innerHTML = `
+        <div class="card">
+          <p class="eyebrow">In plain language</p>
+          <p class="cmp-lead"><b>${esc(aId)}</b> compared with <b>${esc(bId)}</b>:</p>
+          <ul class="cmp-list">${lines.map(t => `<li>${t}</li>`).join("")}</ul>
+        </div>
+        <div class="card">
+          <p class="eyebrow">Side by side</p>
+          <div class="tscroll"><table>
+            <thead><tr><th>Metric</th><th class="num">${esc(aId)}</th><th class="num">${esc(bId)}</th><th class="num">Change</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table></div>
+          <div class="footer-bar" style="margin-top:18px">
+            <button id="copycmp" class="btn-ghost">Copy comparison</button>
+            <button id="dlcmp" class="btn-primary">Download comparison (.txt)</button>
+          </div>
+          <div id="exportcmp" class="export" hidden>
+            <textarea id="exportcmptext" readonly aria-label="Comparison report text"></textarea>
+            <div class="note">Your comparison report is ready above. If the file didn't download, select this text and copy it, or use <b>Copy comparison</b>.</div>
+          </div>
+        </div>`;
+      const cmpText = buildComparisonReport(aId, bId, A, B, lines);
+      document.getElementById("dlcmp").addEventListener("click", () => exportReport(cmpText, aId + "-vs-" + bId, "exportcmp", "exportcmptext"));
+      document.getElementById("copycmp").addEventListener("click", (e) => copyReport(cmpText, e.currentTarget, "exportcmp", "exportcmptext"));
     }
 
     el.report.innerHTML = `
@@ -582,32 +619,38 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     document.getElementById("dl").addEventListener("click", () => exportReport(reportText, curShift.id));
     document.getElementById("copy").addEventListener("click", (e) => copyReport(reportText, e.currentTarget));
 
-    // The comparison report is a separate downloadable document.
-    if (prior) {
-      const cmpText = buildComparisonReport(curShift, priorShift, cur, prior, cmpLines, dateStr, period);
-      document.getElementById("dlcmp").addEventListener("click", () => exportReport(cmpText, curShift.id + "-comparison", "exportcmp", "exportcmptext"));
-      document.getElementById("copycmp").addEventListener("click", (e) => copyReport(cmpText, e.currentTarget, "exportcmp", "exportcmptext"));
+    // Wire the two comparison selectors (latest vs prior by default) and draw.
+    if (allIds.length > 1) {
+      const selA = document.getElementById("cmpA");
+      const selB = document.getElementById("cmpB");
+      const optionsHtml = allIds.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join("");
+      selA.innerHTML = optionsHtml;
+      selB.innerHTML = optionsHtml;
+      selA.value = curShift.id;                                   // latest
+      selB.value = priorShift ? priorShift.id : allIds[allIds.length - 2];
+      const upd = () => renderComparison(selA.value, selB.value);
+      selA.addEventListener("change", upd);
+      selB.addEventListener("change", upd);
+      upd();
     }
     el.report.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // ---- Plain-text comparison report (separate download) ----
-  function buildComparisonReport(curShift, priorShift, cur, prior, cmpLines, dateStr, period) {
+  function buildComparisonReport(aId, bId, A, B, lines) {
     const rule = "=".repeat(58);
-    const L = [rule, "SHIFT COMPARISON REPORT",
-      `${period} · ${curShift.id}`,
-      `vs prior shift · ${priorShift.id}`,
-      `${dateStr}`, rule, ""];
+    const L = [rule, "SHIFT COMPARISON REPORT", `${aId}  vs  ${bId}`, rule, ""];
     L.push("IN PLAIN LANGUAGE");
-    cmpLines.forEach(t => L.push(`  - ${t.replace(/<\/?b>/g, "")}`));
+    lines.forEach(t => L.push(`  - ${t.replace(/<\/?b>/g, "")}`));
     L.push("");
     L.push("SIDE BY SIDE");
-    L.push(`  ${"Metric".padEnd(16)} ${"This shift".padStart(12)} ${"Prior shift".padStart(12)}`);
-    const row = (label, a, b) => L.push(`  ${label.padEnd(16)} ${String(a).padStart(12)} ${String(b).padStart(12)}`);
-    row("Units produced", fmt(cur.units), fmt(prior.units));
-    row("Downtime", fmt(cur.downtime) + " min", fmt(prior.downtime) + " min");
-    row("Defects", fmt(cur.defects), fmt(prior.defects));
-    row("Defect rate", (cur.defectRate*100).toFixed(1) + "%", (prior.defectRate*100).toFixed(1) + "%");
+    const w = Math.max(18, aId.length, bId.length);
+    L.push(`  ${"Metric".padEnd(16)} ${aId.padStart(w)} ${bId.padStart(w)}`);
+    const row = (label, a, b) => L.push(`  ${label.padEnd(16)} ${String(a).padStart(w)} ${String(b).padStart(w)}`);
+    row("Units produced", fmt(A.units), fmt(B.units));
+    row("Downtime", fmt(A.downtime) + " min", fmt(B.downtime) + " min");
+    row("Defects", fmt(A.defects), fmt(B.defects));
+    row("Defect rate", (A.defectRate*100).toFixed(1) + "%", (B.defectRate*100).toFixed(1) + "%");
     L.push("");
     L.push(rule);
     L.push(`Generated ${new Date().toLocaleString("en-US")} · Shift Report Agent`);

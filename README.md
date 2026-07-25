@@ -40,13 +40,14 @@ Pressing **Generate report** produces two reports:
 
 1. **Shift report** — totals, defects by line, exceptions, and a bottom line for
    the latest shift.
-2. **Comparison report** — a *separate* report, below the first, that compares
-   the shift to the immediately prior one: a plain-language summary (output,
-   downtime, defects, defect rate, and the biggest line change) and a
-   side-by-side table. Each report has its own download button.
+2. **Comparison report** — a *separate* report, below the first. It defaults to
+   the latest shift vs the prior one, but **two dropdowns let you compare any
+   two shifts** side by side: a plain-language summary (output, downtime,
+   defects, defect rate, and the biggest line change) and a side-by-side table,
+   with its own download button. Changing either dropdown re-draws it.
 
-The comparison report appears whenever the log has a prior shift; with a
-single-shift log it says so instead. Same behaviour in the Streamlit app.
+The comparison report needs at least two shifts in the log; with a single-shift
+log it says so instead. Same behaviour in the Streamlit app.
 
 ## Log format
 
