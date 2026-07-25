@@ -185,7 +185,7 @@ def comparison_lines(cur: dict, prior: dict | None) -> list[str] | None:
     df = cur["defects"] - prior["defects"]
     lines = [
         f"Output {chg(du, prior['units'], '')} — **{fmt(cur['units'])}** units "
-        f"this shift vs **{fmt(prior['units'])}** last shift.",
+        f"this shift vs **{fmt(prior['units'])}**.",
         f"Downtime {chg(dd, prior['downtime'], ' min')} — "
         f"**{fmt(cur['downtime'])} min** vs **{fmt(prior['downtime'])} min**.",
         f"Defects {chg(df, prior['defects'], '')} — **{fmt(cur['defects'])}** vs "
@@ -299,18 +299,44 @@ if st.session_state.csv_bytes is None:
 
 st.caption(f"Loaded: `{st.session_state.csv_name}`")
 
+# Loading a different file clears any previously generated report.
+if st.session_state.get("report_for") != st.session_state.csv_name:
+    st.session_state.report_ready = False
+    st.session_state.report_for = st.session_state.csv_name
+
 try:
     df = load_records(st.session_state.csv_bytes)
 except ValueError as err:
     st.error(str(err))
     st.stop()
 
-# Latest shift (by shift_start) is current; the one before it is prior.
+# The report is always about the latest shift; the user picks which earlier
+# shift to compare it against, then clicks Generate.
 shifts = (
     df.groupby("shift_id")["shift_start"].min().sort_values().index.tolist()
 )
 cur_id = shifts[-1]
-prior_id = shifts[-2] if len(shifts) > 1 else None
+
+if len(shifts) > 1:
+    st.subheader("Compare shifts")
+    options = [s for s in shifts if s != cur_id]
+    picked = st.selectbox(
+        f"Compare the latest shift (`{cur_id}`) against",
+        options,
+        index=len(options) - 1,  # default: the immediately prior shift
+        key="cmp_shift",
+    )
+    if st.button("Generate report", type="primary"):
+        st.session_state.report_ready = True
+        st.session_state.report_cmp = picked
+    if not st.session_state.get("report_ready"):
+        st.info("Pick a shift to compare against, then click **Generate report**.")
+        st.stop()
+    prior_id = st.session_state.get("report_cmp")
+    if prior_id not in shifts or prior_id == cur_id:
+        prior_id = shifts[-2]  # fall back to the prior shift
+else:
+    prior_id = None
 
 cur_recs = df[df["shift_id"] == cur_id]
 cur = summarize(cur_recs)
@@ -356,7 +382,7 @@ c4.metric("Defect rate", f"{cur['defect_rate'] * 100:.1f}%",
 st.subheader("Compared to the prior shift")
 cmp = comparison_lines(cur, prior)
 if cmp:
-    st.markdown(f"Versus the previous shift (`{prior_id}`):")
+    st.markdown(f"Versus `{prior_id}`:")
     st.markdown("\n".join(f"- {line}" for line in cmp))
 else:
     st.markdown(

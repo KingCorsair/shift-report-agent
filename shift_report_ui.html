@@ -82,6 +82,11 @@
   .drop .small { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
   .drop .fname { font-family: var(--mono); font-size: 12.5px; color: var(--accent); margin-top: 10px; word-break: break-all; }
 
+  .cmprow { display: flex; gap: 10px; align-items: center; padding: 0 16px 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .cmprow label { font-weight: 600; }
+  .cmprow select { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 11px; }
+  .cmprow select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
   .bar { display: flex; gap: 10px; align-items: center; padding: 0 16px 16px; flex-wrap: wrap; }
   button { font-family: var(--sans); font-size: 13.5px; font-weight: 600; border-radius: 8px; cursor: pointer; border: 1px solid transparent; padding: 9px 16px; transition: filter .15s, background .15s; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -183,6 +188,10 @@
       <div class="small">or click to browse · one row per machine per shift</div>
       <div id="fname" class="fname" hidden></div>
     </div>
+    <div id="cmpRow" class="cmprow" hidden>
+      <label for="cmpSelect">Compare the latest shift against</label>
+      <select id="cmpSelect"></select>
+    </div>
     <div class="bar">
       <button id="gen" class="btn-primary" disabled>Generate report</button>
       <button id="sample" class="btn-ghost">Load sample data</button>
@@ -226,6 +235,8 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     sample: document.getElementById("sample"),
     err: document.getElementById("err"),
     report: document.getElementById("report"),
+    cmpRow: document.getElementById("cmpRow"),
+    cmpSelect: document.getElementById("cmpSelect"),
   };
 
   let csvText = null;
@@ -381,7 +392,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     const dd = cur.downtime - prior.downtime;
     const df = cur.defects - prior.defects;
     const lines = [
-      `Output ${chg(du, prior.units, "")} — <b>${fmt(cur.units)}</b> units this shift vs <b>${fmt(prior.units)}</b> last shift.`,
+      `Output ${chg(du, prior.units, "")} — <b>${fmt(cur.units)}</b> units this shift vs <b>${fmt(prior.units)}</b>.`,
       `Downtime ${chg(dd, prior.downtime, " min")} — <b>${fmt(cur.downtime)} min</b> vs <b>${fmt(prior.downtime)} min</b>.`,
       `Defects ${chg(df, prior.defects, "")} — <b>${fmt(cur.defects)}</b> vs <b>${fmt(prior.defects)}</b>, and the defect rate went from <b>${(prior.defectRate*100).toFixed(1)}%</b> to <b>${(cur.defectRate*100).toFixed(1)}%</b>.`,
     ];
@@ -400,7 +411,10 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   }
 
   // ---- Render ----
-  function render(recs) {
+  // The report is always about the latest shift. cmpId (optional) picks which
+  // earlier shift to compare it against; omit it to default to the immediately
+  // prior shift.
+  function render(recs, cmpId) {
     const byShift = new Map();
     recs.forEach(r => {
       if (!byShift.has(r.shift_id)) byShift.set(r.shift_id, { id: r.shift_id, start: r.shift_start, recs: [] });
@@ -408,7 +422,8 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     });
     const shifts = [...byShift.values()].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
     const curShift = shifts[shifts.length - 1];
-    const priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
+    let priorShift = cmpId ? shifts.find(s => s.id === cmpId && s.id !== curShift.id) : null;
+    if (!priorShift) priorShift = shifts.length > 1 ? shifts[shifts.length - 2] : null;
 
     const cur = summarize(curShift.recs);
     const prior = priorShift ? summarize(priorShift.recs) : null;
@@ -502,7 +517,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
       <div class="card">
         <p class="eyebrow">Compared to the prior shift</p>
         ${cmpLines
-          ? `<p class="cmp-lead">Versus the previous shift (<b>${esc(priorShift.id)}</b>):</p>
+          ? `<p class="cmp-lead">Versus <b>${esc(priorShift.id)}</b>:</p>
              <ul class="cmp-list">${cmpLines.map(t => `<li>${t}</li>`).join("")}</ul>`
           : `<p class="cmp-none">This is the only shift in the log, so there's no prior shift to compare against yet.</p>`}
       </div>
@@ -645,12 +660,39 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
   }
 
   // ---- Wiring ----
+  // Sorted list of shift ids in a log (earliest first), or [] if it won't parse.
+  function shiftIdsOf(text) {
+    let recs;
+    try { recs = toRecords(text); } catch (e) { return []; }
+    const seen = new Map();
+    recs.forEach(r => { if (!seen.has(r.shift_id)) seen.set(r.shift_id, r.shift_start); });
+    return [...seen.entries()]
+      .sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
+      .map(e => e[0]);
+  }
+
+  // Fill the "compare against" dropdown with every shift except the latest
+  // (the latest is always the report's subject). Default to the prior shift.
+  function populateCompare(text) {
+    const ids = shiftIdsOf(text);
+    if (ids.length > 1) {
+      const latest = ids[ids.length - 1];
+      el.cmpSelect.innerHTML = ids.filter(id => id !== latest)
+        .map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join("");
+      el.cmpSelect.value = ids[ids.length - 2]; // immediately prior, by default
+      el.cmpRow.hidden = false;
+    } else {
+      el.cmpRow.hidden = true;
+    }
+  }
+
   function setLoaded(name, text) {
     csvText = text;
     el.fname.hidden = false;
     el.fname.textContent = name;
     el.gen.disabled = false;
     el.err.textContent = "";
+    populateCompare(text);
   }
   function readFile(file) {
     if (!file) return;
@@ -673,7 +715,7 @@ S-2026-0720-NIGHT,2026-07-20T18:00,Line C,M-07,330,68,30`;
     el.err.textContent = "";
     try {
       const recs = toRecords(csvText);
-      render(recs);
+      render(recs, el.cmpRow.hidden ? null : el.cmpSelect.value);
     } catch (err) {
       el.report.classList.remove("show");
       el.err.textContent = err.message || "Could not read this log.";
